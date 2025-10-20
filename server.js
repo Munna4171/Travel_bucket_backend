@@ -68,10 +68,31 @@ const signupController = async (req, res) => {
 
         await newUser.save();
 
-        return res.status(201).json({
-            message: "User Created Successfully",
+        // --- UPDATED LOGIC: Log the user in immediately ---
+        if (!process.env.JWT_SECRET) {
+            throw new Error("JWT_SECRET is not defined in environment variables.");
+        }
+
+        const token = jwt.sign(
+            { id: newUser._id },
+            process.env.JWT_SECRET,
+            { expiresIn: "4d" }
+        );
+        
+        const { password: pass, ...rest } = newUser._doc; 
+        
+        res.cookie("X_TTMS_access_token", token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 4 * 24 * 60 * 60 * 1000,
+        }).status(201).json({
             success: true,
+            message: "User Created and Logged In Successfully",
+            user: rest, // Send the user data back
         });
+        // --- END UPDATED LOGIC ---
+
     } catch (error) {
         console.error("Signup Error:", error);
         return res.status(500).json({
@@ -152,7 +173,7 @@ app.use((err, req, res, next) => {
     const statusCode = err.statusCode || 500;
     const message = err.message || "Internal Server Error";
     
-    console.error(`[${statusCode}] ${req.method} ${req.originalUrl}: ${err.message}`);
+    console.error(`[${statusCode}] ${req.method} ${req.originalUrl}: ${message}`);
 
     if (res.headersSent) {
         return next(err);
@@ -186,3 +207,4 @@ const startServer = () => {
 
 // Start the database connection, and only if successful, start the server
 connectDB().then(startServer);
+
